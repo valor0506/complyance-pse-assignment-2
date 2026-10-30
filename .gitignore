@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Database files (local lab data — never commit)
+.data/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Original zip extraction folder (not part of submission)
+Complyance_PSE_Assignment_2_Support_Lab_Candidate_v2/
+
+# Assignment brief docx (markdown version is committed instead)
+Assignment_2_Brief.docx
+
