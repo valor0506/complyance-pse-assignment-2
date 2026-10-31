@@ -65,9 +65,31 @@ Product Support Engineering, Complyance
 
 ---
 
-### Final update / conditional closure — label your chosen simulated time
+### Final update / conditional closure — simulated 26 October 2026, 10:45 GST / 14:45 MYT
 
-*(To be completed in Phase 5/6 following patch verification and lab reconciliation).*
+**Subject:** Resolution Update: Batch import PSE-A2-002 reconciled
+
+Hi Cedar Demo Malaysia Team,
+
+Thank you for your patience while we completed our investigation.
+
+**Investigation Summary & Resolution:**
+- We identified the causal bug in our background queue worker: an internal batch-offset calculation skipped records when processing imports spanning multiple batches.
+- We developed and locally verified a permanent fix across multiple input sizes and batch configurations.
+- Using our safe reconciliation procedure on your existing import (`case-002`), our worker has now processed the five previously pending records (`DOC-006` through `DOC-010`).
+
+**Verified State of Your Data:**
+- All **12 records** are now fully processed with verified normalized results.
+- Your initial seven completed results (`DOC-001` through `DOC-005`, and `DOC-011` through `DOC-012`) were preserved with zero duplication or ID changes.
+- **You do not need to re-upload your file.** All 12 items are intact and visible in your workspace ledger.
+
+**Next Steps & Ticket Closure Conditions:**
+- Our engineering team is scheduling this permanent code fix for an upcoming production patch release. 
+- Please inspect your results dashboard at your earliest convenience to verify that all 12 records are visible and correct.
+- We will keep this case in **Pending Customer Verification** status. Once you confirm the results look good on your end, we will formally close this ticket. If you notice any anomalies, simply reply directly to this thread and we will immediately assist.
+
+Best regards,  
+Product Support Engineering, Complyance
 
 ## 3. Reproduction and root cause
 
@@ -116,9 +138,9 @@ Product Support Engineering, Complyance
 | Varied volumes, batch boundaries, different batch size | **Verified:** Suite expanded to 31 tests covering volumes `[1, 5, 6, 11, 15, 20]` across batch boundaries, and custom `batchSize = 3` (7 records yielding `[3, 3, 1]` batches). All 31 tests pass in 870ms. Evidence: [evidence/tests/03_full_suite_edge_cases_passing.txt](evidence/tests/03_full_suite_edge_cases_passing.txt). |
 | API validation and workspace isolation | Preserved: verified 404 on cross-workspace reads ([evidence/baseline/04_cross_workspace_isolation.json](evidence/baseline/04_cross_workspace_isolation.json)). |
 | Original case before recovery | Verified: 12 total, 7 processed, 5 pending; results for 1–5, 11–12 ([evidence/baseline/02_cedar_summary.json](evidence/baseline/02_cedar_summary.json)). |
-| Patched-worker restart and approved `resume-case` | *(Phase 5)* |
-| Original case after recovery | *(Phase 5)* |
-| Paused Maple control | Verified baseline: 3 records in paused state ([evidence/baseline/03_maple_control.json](evidence/baseline/03_maple_control.json)). |
+| Patched-worker restart and approved `resume-case` | **Executed:** Triggered `bun run resume-case`, receiving `{"id":"case-002","workspaceId":"cedar-demo","state":"queued","pending":5}`. Background worker resumed execution and emitted `resume_requested` and `batch_processed` events for rows `[6,7,8,9,10]`. Evidence: [evidence/recovery/01_resume_command_ack.json](evidence/recovery/01_resume_command_ack.json). |
+| Original case after recovery | **Verified:** Exactly 12 total records, 12 processed, 0 pending, state `completed`. All 12 normalized results present; records 1–5 and 11–12 retained their exact original identities and timestamps; zero duplicate rows or results. Evidence: [evidence/recovery/02_cedar_summary_recovered.json](evidence/recovery/02_cedar_summary_recovered.json), [evidence/recovery/02_cedar_results_recovered.json](evidence/recovery/02_cedar_results_recovered.json), [evidence/recovery/02_cedar_events_recovered.json](evidence/recovery/02_cedar_events_recovered.json). |
+| Paused Maple control | **Verified:** Control import `control-002` remained 100% untouched throughout both the failure and reconciliation phases (state `paused`, 3 pending, 0 processed). Evidence: [evidence/recovery/03_maple_control_recovered.json](evidence/recovery/03_maple_control_recovered.json). |
 
 ## 5. Escalation and customer ownership
 
@@ -137,5 +159,11 @@ Product Support Engineering, Complyance
   - [Failing Regression Test Output (Before Fix)](evidence/tests/01_failing_regression_before_fix.txt)
   - [Passing Regression Test Output (After Fix)](evidence/tests/02_passing_regression_after_fix.txt)
   - [Full Test Suite Output with Edge Cases](evidence/tests/03_full_suite_edge_cases_passing.txt)
+  - [Approved resume-case Command Acknowledgment](evidence/recovery/01_resume_command_ack.json)
+  - [Recovered Cedar Demo Summary](evidence/recovery/02_cedar_summary_recovered.json)
+  - [Recovered Cedar Demo Source Records](evidence/recovery/02_cedar_records_recovered.json)
+  - [Recovered Cedar Demo Normalized Results](evidence/recovery/02_cedar_results_recovered.json)
+  - [Recovered Cedar Demo Audit Events Log](evidence/recovery/02_cedar_events_recovered.json)
+  - [Post-Recovery Maple Demo Control State](evidence/recovery/03_maple_control_recovered.json)
 - **AI assistance:** *(To be completed in Phase 6)*
 - **Limitations:** *(To be completed in Phase 6)*
