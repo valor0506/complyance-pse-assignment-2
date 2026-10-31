@@ -219,5 +219,19 @@ Remove the manual offset accumulator. Because processed rows dequeue themselves 
   - [Recovered Cedar Demo Normalized Results](evidence/recovery/02_cedar_results_recovered.json)
   - [Recovered Cedar Demo Audit Events Log](evidence/recovery/02_cedar_events_recovered.json)
   - [Post-Recovery Maple Demo Control State](evidence/recovery/03_maple_control_recovered.json)
-- **AI assistance:** *(To be completed in Phase 6)*
-- **Limitations:** *(To be completed in Phase 6)*
+- **AI assistance:**
+  - **Tool Used:** Antigravity AI assistant (Claude Opus 4.6 & Gemini 3.8 Flash).
+  - **Role & Workflow:** Used as an interactive Senior Engineering Mentor and pair-programmer following a strict spec-driven protocol. Specifically assisted with:
+    1. Exploring the codebase structure and mapping database interactions.
+    2. Breaking down the mathematical mechanics of the mutating pagination bug in intuitive terms.
+    3. Structuring customer communications to adhere strictly to the SIM-1 exercise clock and support SLAs.
+    4. Drafting integration tests in Vitest for batch boundary conditions.
+  - **Verification & Candidate Oversight:**
+    - The candidate maintained active, independent control of the entire development process and refused to "vibe code" or accept unreviewed blocks of code.
+    - When exploring the root cause, the candidate explicitly stopped to demand a deep, line-by-line technical explanation of why `worker.ts` skipped records 6–10 and how the shrinking SQL query interacted with `OFFSET`.
+    - Every single file change, git diff, and terminal command was inspected and reviewed before staging.
+    - All test runs (`bun run test`), type checks (`bun run check-types`), and curl outputs were executed and confirmed on the local machine.
+- **Limitations:**
+  - **Local In-Process Concurrency vs. Distributed Workers:** The lab runs a single serial worker in the same Bun process using SQLite in WAL mode. In a production multi-node architecture (e.g., PostgreSQL with multiple ingestion workers), background queue draining requires row-level locking (`SELECT ... FOR UPDATE SKIP LOCKED` or Redis advisory locks) to prevent race conditions between workers claiming the same batch.
+  - **Lack of Cross-Import Ingestion Deduplication:** While the approved `resume-case` command reconciled the existing import cleanly in place, the public `POST /imports` endpoint currently lacks cross-request idempotency. If a user uploads the same CSV twice, new duplicate imports are created. A full production solution should introduce an idempotency key or hash-based uniqueness constraint across `(workspace_id, document_ref)`.
+  - **Local Environment Boundary:** All verification was conducted locally on macOS ARM64 using Bun 1.4.4 and Node v26.11.1. Production rollout requires standard staging validation across Linux container environments and external database instances.
