@@ -97,7 +97,7 @@ export class LabRepository {
     }).immediate();
   }
 
-  pendingBatch(workspaceId: WorkspaceId, id: string, limit: number, offset: number): SourceRecord[] {
+  pendingBatch(workspaceId: WorkspaceId, id: string, limit: number, offset = 0): SourceRecord[] {
     return this.db.query<SourceRecord, [string, string, number, number]>(`
       SELECT id, document_ref AS documentRef, label, state FROM records
       WHERE workspace_id = ? AND import_id = ? AND state = 'pending' ORDER BY id LIMIT ? OFFSET ?
