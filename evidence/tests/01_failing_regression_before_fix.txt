@@ -1,0 +1,69 @@
+$ vitest run
+
+ RUN  v3.2.7 /Users/valor/Projects/Complyance/Assignment2
+
+ ❯ tests/http.test.ts (26 tests | 1 failed) 563ms
+   ✓ local training API > health is public and reports actual training configuration 10ms
+   ✓ local training API > quoted CSV, BOM and CRLF produce genuine normalized results and atomic batch events 51ms
+   × local training API > regression PSE-A2-002: processes 12 records across multiple batches without skipping 48ms
+     → expected { …(6) } to match object { total: 12, processed: 12, …(2) }
+(2 matching properties omitted from actual)
+   ✓ local training API > processes 1 records with exact IDs and bounded batches 67ms
+   ✓ local training API > processes 5 records with exact IDs and bounded batches 45ms
+   ✓ local training API > each POST creates a distinct import even for repeated CSV 90ms
+   ✓ local training API > rejects empty file with a structured client error 4ms
+   ✓ local training API > rejects header only with a structured client error 1ms
+   ✓ local training API > rejects wrong header with a structured client error 1ms
+   ✓ local training API > rejects extra header with a structured client error 1ms
+   ✓ local training API > rejects missing column with a structured client error 1ms
+   ✓ local training API > rejects broken quote with a structured client error 1ms
+   ✓ local training API > rejects duplicate references with a structured client error 1ms
+   ✓ local training API > rejects empty reference with a structured client error 0ms
+   ✓ local training API > rejects non-ASCII reference with a structured client error 0ms
+   ✓ local training API > rejects reference punctuation with a structured client error 0ms
+   ✓ local training API > rejects long reference with a structured client error 1ms
+   ✓ local training API > rejects blank label with a structured client error 0ms
+   ✓ local training API > rejects long label with a structured client error 0ms
+   ✓ local training API > rejects too many rows with a structured client error 1ms
+   ✓ local training API > requires a valid synthetic workspace selector and CSV media type 1ms
+   ✓ local training API > unknown and cross-workspace imports are 404 on every resource 3ms
+   ✓ local training API > rejects oversized or invalid UTF-8 bodies with structured errors 3ms
+   ✓ local training API > keeps newly submitted imports isolated between workspaces 45ms
+   ✓ local training API > the paused control workspace is untouched by customer processing 1ms
+   ✓ local training API > a clean restart preserves completed results, IDs, events and the paused control 130ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/http.test.ts > local training API > regression PSE-A2-002: processes 12 records across multiple batches without skipping
+AssertionError: expected { …(6) } to match object { total: 12, processed: 12, …(2) }
+(2 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "pending": 0,
+-   "processed": 12,
++   "pending": 5,
++   "processed": 7,
+    "state": "completed",
+    "total": 12,
+  }
+
+ ❯ tests/http.test.ts:85:21
+     83|     const id = await create(csv);
+     84|     const summary = await waitForCompletion(lab.url, id);
+     85|     expect(summary).toMatchObject({ total: 12, processed: 12, pending:…
+       |                     ^
+     86| 
+     87|     const records = objects((await read(id, "/records")).records);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 25 passed (26)
+   Start at  14:14:19
+   Duration  720ms (transform 21ms, setup 0ms, collect 20ms, tests 563ms, environment 0ms, prepare 28ms)
+
+error: script "test" exited with code 1
