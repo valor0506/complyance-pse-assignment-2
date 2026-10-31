@@ -144,7 +144,61 @@ Product Support Engineering, Complyance
 
 ## 5. Escalation and customer ownership
 
-*(To be completed in Phase 5/6)*
+- **Decision and reason:**
+  - **Decision:** Escalate to Core Platform Engineering via pull request and internal Linear ticket.
+  - **Reason:** Even though the bug is fully reproduced, patched, and verified locally in our test environment, Product Support does not unilaterally deploy code to production. A formal code review, CI build, and scheduled release by the Core Ingestion team are required to permanently protect all platform tenants from multi-batch ingestion drops.
+- **Continuity:**
+  - **Support Ownership:** Support retains 100% ownership of customer communication and ticket lifecycle until Cedar Demo Malaysia confirms full resolution. Support does NOT pass customer communication off to engineering.
+  - **Next Customer Checkpoint:** Scheduled for 11:30 GST / 15:30 MYT, or immediately upon notification of production deployment.
+  - **Ticket Status:** Kept in `Pending Customer Verification` (locally resolved; awaiting customer review). We explicitly do not fabricate release tags or engineering sign-off timestamps.
+- **Linear-Ready Ticket Draft:**
+
+```markdown
+### Title: [P2 Bug] Ingestion worker drops records on multi-batch CSV imports due to mutating SQL pagination
+
+**Team:** Ingestion Engine / Core Platform  
+**Priority:** P2 (High)  
+**Reported Customer:** Cedar Demo Malaysia (`cedar-demo` / `case-002`)  
+**Investigating PSE:** Product Support Engineering  
+
+#### 1. Problem Description
+When customers upload CSV files containing more records than the configured batch size (`SUPPORT_LAB_BATCH_SIZE=5`), the background worker prematurely marks the import as `completed` while silently leaving records stuck in `pending`. In Cedar Demo's 12-record upload, records 1–5 and 11–12 processed successfully, but records 6–10 were skipped entirely.
+
+#### 2. Root Cause
+In `src/worker.ts`, the batch loop increments an SQL `OFFSET`:
+```typescript
+let offset = 0;
+while (true) {
+  const batch = repository.pendingBatch(workspaceId, importId, batchSize, offset);
+  if (batch.length === 0) break;
+  repository.commitBatch(workspaceId, importId, batch);
+  offset += batch.length; // <-- Causal bug
+}
+```
+`repository.pendingBatch` queries rows `WHERE state = 'pending'`. When `commitBatch` executes, it transitions those rows to `state = 'processed'`, shrinking the pending set. Applying an incrementing `OFFSET` to a shrinking table causes the query to skip rows that shifted into lower index positions.
+
+#### 3. Proposed Fix
+Remove the manual offset accumulator. Because processed rows dequeue themselves from the `'pending'` condition, the next batch of pending rows is always at `OFFSET 0`:
+- `src/worker.ts`: Drain the queue at offset 0 until `batch.length === 0`.
+- `src/repository.ts`: Make `offset` optional with default `0` in `pendingBatch`.
+
+#### 4. Test Evidence & Local Verification
+- Added failing regression test reproducing the 12-record failure (failed with 7 processed, 5 pending).
+- Applied fix: all 31 Vitest integration tests pass in 870ms.
+- Verified boundary volumes [1, 5, 6, 11, 15, 20] and custom batch size 3 (`[3, 3, 1]`).
+- Reconciled customer `case-002` locally via `bun run resume-case`: all 12 records processed with zero duplicate results and Maple control untouched.
+
+#### 5. Action Requested
+- **Requested Owner:** Ingestion Platform Engineering Lead (@platform-eng)
+- **Requested Action:** Code review and merge of Support PR `#42`; schedule for next patch deployment.
+- **Target Review Checkpoint:** Today by 14:00 GST / 18:00 MYT.
+```
+
+- **Exit criteria:**
+  1. Engineering approves PR and deploys patch to production.
+  2. Support verifies customer's production dashboard displays all 12 documents with matching normalized labels.
+  3. Customer confirms business continuity and approves ticket closure.
+  4. Ticket PSE-A2-002 transitioned from `Pending Customer Verification` to `Resolved / Closed`.
 
 ## 6. Submission notes
 
