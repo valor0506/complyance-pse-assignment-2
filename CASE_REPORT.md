@@ -71,16 +71,44 @@ Product Support Engineering, Complyance
 
 ## 3. Reproduction and root cause
 
-- **Environment and steps:** *(To be completed in Phase 3/4)*
-- **Expected versus observed:** *(To be completed in Phase 3/4)*
-- **Causal explanation:** *(To be completed in Phase 3/4)*
-- **Permanent change:** *(To be completed in Phase 3/4)*
+- **Environment and steps:**
+  - Runtime: Bun 1.4.4, Node v26.11.1, SQLite 3 in WAL mode, loopback port, default batch size 5 (`SUPPORT_LAB_BATCH_SIZE=5`).
+  - Isolated test harness: Ephemeral Bun process and temporary SQLite database managed by Vitest integration suite (`tests/http.test.ts`).
+  - Reproduction call: `POST /imports` with header `x-lab-workspace: cedar-demo` and `Content-Type: text/csv` submitting a 12-row CSV (`DOC-001` through `DOC-012`). Polled `GET /imports/:id` until reaching `completed`.
+  - Evidence artifact: [evidence/tests/01_failing_regression_before_fix.txt](evidence/tests/01_failing_regression_before_fix.txt).
+- **Expected versus observed:**
+  - **Expected:** `total: 12`, `processed: 12`, `pending: 0`, `state: "completed"`. All 12 source rows marked `processed`. Exactly 12 normalized results (`DOC-001` through `DOC-012`). Exactly 3 `batch_processed` events with counts `[5, 5, 2]`.
+  - **Observed:** `total: 12`, `processed: 7`, `pending: 5`, `state: "completed"`. Only rows 1–5 and 11–12 processed; rows 6–10 orphaned in `pending`. Exactly 7 normalized results generated. Only 2 `batch_processed` events (`[1,2,3,4,5]` count 5, and `[11,12]` count 2).
+- **Causal explanation:**
+  - In `src/worker.ts` lines 8–14, the background worker processes batches using an incrementing offset:
+    ```typescript
+    let offset = 0;
+    while (true) {
+      const batch = repository.pendingBatch(workspaceId, importId, batchSize, offset);
+      if (batch.length === 0) break;
+      repository.commitBatch(workspaceId, importId, batch);
+      offset += batch.length;
+    }
+    ```
+  - In `src/repository.ts` lines 100–105, `pendingBatch` queries:
+    ```sql
+    SELECT id, document_ref AS documentRef, label, state FROM records
+    WHERE workspace_id = ? AND import_id = ? AND state = 'pending' ORDER BY id LIMIT ? OFFSET ?
+    ```
+  - Inside `commitBatch`, every record in the batch is updated from `state = 'pending'` to `state = 'processed'`.
+  - Because processed records transition out of `state = 'pending'`, the result set of pending records is dynamically mutating and shrinking after every batch.
+  - Applying an incrementing `OFFSET` to a mutating query produces a classic pagination defect:
+    1. **Batch 1 (`offset = 0, limit = 5`):** Fetches the first 5 pending rows (records 1..5). They are committed and marked `processed`. The pending set shrinks from 12 to 7. The worker increments `offset += 5` (`offset = 5`).
+    2. **Batch 2 (`offset = 5, limit = 5`):** On the remaining 7 pending rows, `OFFSET 5` skips the first 5 remaining rows (records 6..10!) and only reads rows at indexes 5..6 (records 11..12). Records 11..12 are marked `processed`. The pending set shrinks from 7 to 5. The worker increments `offset += 2` (`offset = 7`).
+    3. **Batch 3 (`offset = 7, limit = 5`):** 5 pending rows remain (records 6..10), but `OFFSET 7` on a 5-row table returns 0 rows (`batch.length === 0`).
+    4. The loop terminates, calls `finishImport()`, and marks the import `completed` despite 5 unfulfilled pending rows.
+- **Permanent change:** *(To be documented in Phase 4 upon implementing the fix).*
 
 ## 4. Tests and existing-case reconciliation
 
 | Check | Actual result and evidence |
 | --- | --- |
-| Regression: failure before, success after | *(Phase 3/4)* |
+| Regression: failure before, success after | **Failure confirmed:** Vitest assertion failed with `expected { total: 12, processed: 7, pending: 5, state: 'completed' } to match { processed: 12, pending: 0 }`. Captured in [evidence/tests/01_failing_regression_before_fix.txt](evidence/tests/01_failing_regression_before_fix.txt). |
 | Varied volumes, batch boundaries, different batch size | *(Phase 4)* |
 | API validation and workspace isolation | Preserved: verified 404 on cross-workspace reads ([evidence/baseline/04_cross_workspace_isolation.json](evidence/baseline/04_cross_workspace_isolation.json)). |
 | Original case before recovery | Verified: 12 total, 7 processed, 5 pending; results for 1–5, 11–12 ([evidence/baseline/02_cedar_summary.json](evidence/baseline/02_cedar_summary.json)). |
@@ -102,5 +130,6 @@ Product Support Engineering, Complyance
   - [Cedar Demo Case-002 Event Log](evidence/baseline/02_cedar_events.json)
   - [Maple Demo Control-002 Summary](evidence/baseline/03_maple_control.json)
   - [Cross-Workspace Isolation 404 Check](evidence/baseline/04_cross_workspace_isolation.json)
+  - [Failing Regression Test Output (Before Fix)](evidence/tests/01_failing_regression_before_fix.txt)
 - **AI assistance:** *(To be completed in Phase 6)*
 - **Limitations:** *(To be completed in Phase 6)*
