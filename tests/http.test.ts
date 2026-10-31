@@ -77,6 +77,37 @@ describe("local training API", () => {
     expect(processedIds.sort((a, b) => Number(a) - Number(b))).toEqual(records.map((record) => record.id));
   });
 
+  test("regression PSE-A2-002: processes 12 records across multiple batches without skipping", async () => {
+    const count = 12;
+    const csv = `document_ref,label\n${Array.from({ length: count }, (_, index) => `DOC-${String(index + 1).padStart(3, "0")},Sample ${String(index + 1).padStart(3, "0")}`).join("\n")}\n`;
+    const id = await create(csv);
+    const summary = await waitForCompletion(lab.url, id);
+    expect(summary).toMatchObject({ total: 12, processed: 12, pending: 0, state: "completed" });
+
+    const records = objects((await read(id, "/records")).records);
+    expect(records).toHaveLength(12);
+    expect(records.every((record) => record.state === "processed")).toBe(true);
+
+    const results = objects((await read(id, "/results")).results);
+    expect(results).toHaveLength(12);
+    expect(results.map((result) => result.documentRef)).toEqual(
+      Array.from({ length: count }, (_, index) => `DOC-${String(index + 1).padStart(3, "0")}`),
+    );
+    expect(results.map((result) => result.normalizedLabel)).toEqual(
+      Array.from({ length: count }, (_, index) => `SAMPLE ${String(index + 1).padStart(3, "0")}`),
+    );
+
+    const events = objects((await read(id, "/events")).events);
+    const batches = events.filter((event) => event.type === "batch_processed");
+    expect(batches).toHaveLength(3);
+    const batchSizes = batches.map((batch) => object(batch.details).count);
+    expect(batchSizes).toEqual([5, 5, 2]);
+
+    const allProcessedIds = batches.flatMap((batch) => object(batch.details).recordIds as number[]);
+    expect(allProcessedIds).toHaveLength(12);
+    expect(new Set(allProcessedIds).size).toBe(12);
+  });
+
   test.each([1, 5])("processes %i records with exact IDs and bounded batches", async (count) => {
     const id = await create(`document_ref,label\n${Array.from({ length: count }, (_, index) => `SIZE-${index + 1}, label ${index + 1} `).join("\n")}\n`);
     expect(await waitForCompletion(lab.url, id)).toMatchObject({ total: count, processed: count, pending: 0 });
