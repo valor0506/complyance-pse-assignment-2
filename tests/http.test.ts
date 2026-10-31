@@ -108,7 +108,7 @@ describe("local training API", () => {
     expect(new Set(allProcessedIds).size).toBe(12);
   });
 
-  test.each([1, 5])("processes %i records with exact IDs and bounded batches", async (count) => {
+  test.each([1, 5, 6, 11, 15, 20])("processes %i records with exact IDs and bounded batches", async (count) => {
     const id = await create(`document_ref,label\n${Array.from({ length: count }, (_, index) => `SIZE-${index + 1}, label ${index + 1} `).join("\n")}\n`);
     expect(await waitForCompletion(lab.url, id)).toMatchObject({ total: count, processed: count, pending: 0 });
     const records = objects((await read(id, "/records")).records);
@@ -126,6 +126,34 @@ describe("local training API", () => {
       processedIds.push(...details.recordIds);
     }
     expect(processedIds.sort((a, b) => Number(a) - Number(b))).toEqual(records.map((record) => record.id));
+  });
+
+  test("processes records with a different configured batch size (batchSize = 3)", async () => {
+    const customDir = await mkdtemp(join(tmpdir(), "pse-custom-batch-"));
+    const customDb = join(customDir, "custom.sqlite");
+    const customLab = await startLab(customDb, 3);
+    try {
+      const response = await fetch(`${customLab.url}/health`);
+      expect(await response.json()).toMatchObject({ batchSize: 3 });
+
+      const postRes = await fetch(`${customLab.url}/imports`, {
+        method: "POST",
+        headers: { "x-lab-workspace": "cedar-demo", "content-type": "text/csv" },
+        body: "document_ref,label\n" + Array.from({ length: 7 }, (_, index) => `CUST-${index + 1},Cust Label ${index + 1}`).join("\n") + "\n",
+      });
+      const body = await json(postRes);
+      const id = body.id as string;
+
+      expect(await waitForCompletion(customLab.url, id)).toMatchObject({ total: 7, processed: 7, pending: 0, state: "completed" });
+      const eventsRes = await fetch(`${customLab.url}/imports/${id}/events`, { headers: cedar });
+      const events = objects((await json(eventsRes)).events);
+      const batches = events.filter((event) => event.type === "batch_processed");
+      expect(batches).toHaveLength(3);
+      expect(batches.map((batch) => object(batch.details).count)).toEqual([3, 3, 1]);
+    } finally {
+      await customLab.stop();
+      await rm(customDir, { recursive: true, force: true });
+    }
   });
 
   test("each POST creates a distinct import even for repeated CSV", async () => {

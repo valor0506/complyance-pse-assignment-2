@@ -102,14 +102,18 @@ Product Support Engineering, Complyance
     2. **Batch 2 (`offset = 5, limit = 5`):** On the remaining 7 pending rows, `OFFSET 5` skips the first 5 remaining rows (records 6..10!) and only reads rows at indexes 5..6 (records 11..12). Records 11..12 are marked `processed`. The pending set shrinks from 7 to 5. The worker increments `offset += 2` (`offset = 7`).
     3. **Batch 3 (`offset = 7, limit = 5`):** 5 pending rows remain (records 6..10), but `OFFSET 7` on a 5-row table returns 0 rows (`batch.length === 0`).
     4. The loop terminates, calls `finishImport()`, and marks the import `completed` despite 5 unfulfilled pending rows.
-- **Permanent change:** *(To be documented in Phase 4 upon implementing the fix).*
+- **Permanent change:**
+  - **Files modified:** `src/worker.ts` and `src/repository.ts`.
+  - **Worker patch (`src/worker.ts`):** Removed `offset += batch.length` from `processImport`. The worker now repeatedly queries `repository.pendingBatch(workspaceId, importId, batchSize)` at offset 0 until `batch.length === 0`. Because `commitBatch` atomically marks each processed batch as `state = 'processed'`, the pending set naturally shrinks, and offset 0 always targets the next pending records in ascending ID order.
+  - **Repository signature (`src/repository.ts`):** Added a default parameter `offset = 0` to `pendingBatch(workspaceId, id, limit, offset = 0)`. This preserves backward compatibility for callers specifying an explicit offset while simplifying standard queue draining.
+  - **Contract preservation:** The public HTTP contract, request validation, CSV parser, batch size boundaries (1–20), transaction atomicity, and workspace isolation remain 100% untouched.
 
 ## 4. Tests and existing-case reconciliation
 
 | Check | Actual result and evidence |
 | --- | --- |
-| Regression: failure before, success after | **Failure confirmed:** Vitest assertion failed with `expected { total: 12, processed: 7, pending: 5, state: 'completed' } to match { processed: 12, pending: 0 }`. Captured in [evidence/tests/01_failing_regression_before_fix.txt](evidence/tests/01_failing_regression_before_fix.txt). |
-| Varied volumes, batch boundaries, different batch size | *(Phase 4)* |
+| Regression: failure before, success after | **Success confirmed:** Vitest regression test `processes 12 records across multiple batches without skipping` passes (12 total, 12 processed, 0 pending, 3 batches [5, 5, 2]). Evidence: [evidence/tests/02_passing_regression_after_fix.txt](evidence/tests/02_passing_regression_after_fix.txt). |
+| Varied volumes, batch boundaries, different batch size | **Verified:** Suite expanded to 31 tests covering volumes `[1, 5, 6, 11, 15, 20]` across batch boundaries, and custom `batchSize = 3` (7 records yielding `[3, 3, 1]` batches). All 31 tests pass in 870ms. Evidence: [evidence/tests/03_full_suite_edge_cases_passing.txt](evidence/tests/03_full_suite_edge_cases_passing.txt). |
 | API validation and workspace isolation | Preserved: verified 404 on cross-workspace reads ([evidence/baseline/04_cross_workspace_isolation.json](evidence/baseline/04_cross_workspace_isolation.json)). |
 | Original case before recovery | Verified: 12 total, 7 processed, 5 pending; results for 1–5, 11–12 ([evidence/baseline/02_cedar_summary.json](evidence/baseline/02_cedar_summary.json)). |
 | Patched-worker restart and approved `resume-case` | *(Phase 5)* |
@@ -131,5 +135,7 @@ Product Support Engineering, Complyance
   - [Maple Demo Control-002 Summary](evidence/baseline/03_maple_control.json)
   - [Cross-Workspace Isolation 404 Check](evidence/baseline/04_cross_workspace_isolation.json)
   - [Failing Regression Test Output (Before Fix)](evidence/tests/01_failing_regression_before_fix.txt)
+  - [Passing Regression Test Output (After Fix)](evidence/tests/02_passing_regression_after_fix.txt)
+  - [Full Test Suite Output with Edge Cases](evidence/tests/03_full_suite_edge_cases_passing.txt)
 - **AI assistance:** *(To be completed in Phase 6)*
 - **Limitations:** *(To be completed in Phase 6)*
